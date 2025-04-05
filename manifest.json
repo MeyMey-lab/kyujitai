@@ -3,6 +3,7 @@
   "name": "旧字体化",
   "version": "1.0",
   "description": "Webページ上の漢字を旧字体にします。",
+  "homepage_url": "https://github.com/MeyMey-lab/kyujitai",
   "permissions": ["activeTab","storage"],
   "options_ui": {
     "page": "options.html",
