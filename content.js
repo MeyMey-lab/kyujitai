@@ -204,6 +204,7 @@ function initContentScript() {
       });
     });
   }
+  replacePlaceholders();
 }
 
 /**
@@ -220,3 +221,15 @@ function convertNewToOld(text) {
   }
   return result;
 }
+
+// プレースホルダー初回変換
+function replacePlaceholders() {
+  const elems = document.querySelectorAll('[placeholder]');
+  elems.forEach(elem => {
+    let ph = elem.getAttribute('placeholder');
+    // convertNewToOld は既存の旧→新（またはその逆）の変換関数
+    ph = convertNewToOld(ph);
+    elem.setAttribute('placeholder', ph);
+  });
+}
+
