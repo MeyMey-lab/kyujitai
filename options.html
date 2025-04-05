@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>設定 - 旧字体化</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>旧字体の設定</h1>
+    <form id="options-form">
+      <div class="option">
+        <label>
+          <input type="checkbox" id="convertOldToNew">
+          元から旧字体の場合は新字体に変換する
+        </label>
+      </div>
+      <div class="option">
+        <label>
+          <input type="checkbox" id="convertFormToOld">
+          フォームに入力したテキストを旧字体に変換する
+        </label>
+      </div>
+      <div class="option">
+        <label>
+          <input type="checkbox" id="convertCopyToNew">
+          テキストを選択してコピーした場合新字体に戻す
+        </label>
+      </div>
+      <div class="option">
+        <label>
+          <input type="checkbox" id="avoidCompatibility">
+          CJK漢字をなるべく使わない
+        </label>
+      </div>
+    </form>
+  </div>
+  <script src="options.js" defer></script>
+</body>
+</html>
