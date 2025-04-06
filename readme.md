@@ -8,13 +8,12 @@ manifest.json
 ```
 "background": {
     "service_worker": "background.js"
-},
-
+}
 ```
 を
 ```
 "background": {
   "scripts": ["background.js"]
-},
+}
 ```
 に書き換えてください。
