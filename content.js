@@ -210,9 +210,11 @@ function initContentScript() {
         });
       });
     }
+
+    // プレースホルダー内も置換
     replacePlaceholders();
   });
-  }
+}
 
 /**
  * 旧→新の変換（フォーム入力用など）を、文字単位で実施
