@@ -5,7 +5,7 @@ let settings = {
   convertOldToNew: false,    // 「元から旧字体の場合は新字体に変換する」
   convertFormToOld: false,   // 「フォームに入力したテキストを旧字体に変換する」
   convertCopyToNew: false,   // 「テキストを選択してコピーした場合新字体に戻す」
-  avoidCompatibility: false  // 「CJK互換漢字を使わない」
+  avoidCompatibility: false  // 「CJK互換漢字を使わない」
 };
 
 // chrome.storage.local から設定を読み込む
