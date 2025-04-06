@@ -152,60 +152,67 @@ function walk(node) {
  * メイン初期化関数
  */
 function initContentScript() {
-  // ページ全体（head と body）に対して置換処理を実施
-  walk(document.head);
-  walk(document.body);
-  
-  // MutationObserver により、動的に追加されたノードも対象
-  const observer = new MutationObserver(mutations => {
-    mutations.forEach(mutation => {
-      mutation.addedNodes.forEach(node => {
-        walk(node);
+  chrome.storage.local.get("enabled", (result) => {
+    const enabled = (result.enabled === undefined) ? true : result.enabled;
+    if (!enabled) {
+      console.log("拡張機能は無効です。");
+      return; // 無効の場合は処理しない
+    }
+    // ページ全体（head と body）に対して置換処理を実施
+    walk(document.head);
+    walk(document.body);
+    
+    // MutationObserver により、動的に追加されたノードも対象
+    const observer = new MutationObserver(mutations => {
+      mutations.forEach(mutation => {
+        mutation.addedNodes.forEach(node => {
+          walk(node);
+        });
       });
     });
-  });
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
-  
-  // (3) コピー時に新字体へ戻す機能の設定
-  if (settings.convertCopyToNew) {
-    document.addEventListener('copy', function(e) {
-      const selection = window.getSelection().toString();
-      let converted = "";
-      for (let char of selection) {
-        // reverseReplacements により、旧字体なら新字体に戻す
-        converted += reverseReplacements[char] || char;
-      }
-      e.clipboardData.setData('text/plain', converted);
-      e.preventDefault();
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
     });
-  }
-  
-  // (2) フォーム入力の変換処理
-  if (settings.convertFormToOld) {
-    const formElements = document.querySelectorAll("input[type='text'], textarea");
-    formElements.forEach(el => {
-      let composing = false;
-      el.addEventListener('compositionstart', () => {
-        composing = true;
-      });
-      el.addEventListener('compositionend', () => {
-        composing = false;
-        // 組成終了後に変換処理を実行する
-        el.value = convertNewToOld(el.value);
-      });
-      el.addEventListener('input', () => {
-        // 組成中は変換せず、組成終了後に変換されるようにする
-        if (!composing) {
-          el.value = convertNewToOld(el.value);
+    
+    // (3) コピー時に新字体へ戻す機能の設定
+    if (settings.convertCopyToNew) {
+      document.addEventListener('copy', function(e) {
+        const selection = window.getSelection().toString();
+        let converted = "";
+        for (let char of selection) {
+          // reverseReplacements により、旧字体なら新字体に戻す
+          converted += reverseReplacements[char] || char;
         }
+        e.clipboardData.setData('text/plain', converted);
+        e.preventDefault();
       });
-    });
+    }
+    
+    // (2) フォーム入力の変換処理
+    if (settings.convertFormToOld) {
+      const formElements = document.querySelectorAll("input[type='text'], textarea");
+      formElements.forEach(el => {
+        let composing = false;
+        el.addEventListener('compositionstart', () => {
+          composing = true;
+        });
+        el.addEventListener('compositionend', () => {
+          composing = false;
+          // 組成終了後に変換処理を実行する
+          el.value = convertNewToOld(el.value);
+        });
+        el.addEventListener('input', () => {
+          // 組成中は変換せず、組成終了後に変換されるようにする
+          if (!composing) {
+            el.value = convertNewToOld(el.value);
+          }
+        });
+      });
+    }
+    replacePlaceholders();
+  });
   }
-  replacePlaceholders();
-}
 
 /**
  * 旧→新の変換（フォーム入力用など）を、文字単位で実施

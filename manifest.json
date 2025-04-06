@@ -4,13 +4,22 @@
   "version": "1.0",
   "description": "Webページ上の漢字を旧字体にします。",
   "homepage_url": "https://github.com/MeyMey-lab/kyujitai",
-  "permissions": ["activeTab","storage"],
+  "permissions": ["activeTab","storage","scripting"],
   "options_ui": {
     "page": "options.html",
     "open_in_tab": true
   },
   "icons": {
     "48": "icons/48.png"
+  },
+  "action": {
+    "default_icon": {
+      "48": "icons/48.png"
+    },
+    "default_title": "旧字体化が有効です"
+  },
+  "background": {
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
