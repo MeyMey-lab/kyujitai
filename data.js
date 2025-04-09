@@ -55,6 +55,19 @@ const conditionalReplacements = {
       condition: (prev, next) => !(["伸"].includes(next)),
       replacement: "缺"
     },
+  ],
+  "連": [
+    {
+      // 前が「大」かつ、後ろが「市」または、(次が存在しない or 次が漢字でない)
+      condition: (prev, next) => {
+        return prev === "大" && (!next || next === "市" || !/[\u4E00-\u9FFF]/.test(next));
+      },
+      replacement: "連"
+    },
+    {
+      condition: (prev, next) => true,
+      replacement: "聯"
+    }
   ]
 };
 
@@ -419,7 +432,6 @@ const replacements = {
   "著": "著",
   "茲": "玆",
   "剤": "劑",
-  "連": "聯",
   "庁": "廳",
   "渚": "渚",
   "冊": "册",
