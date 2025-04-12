@@ -59,9 +59,14 @@ const conditionalReplacements = {
   "連": [
     {
       // 前が「大」かつ、後ろが「市」または、(次が存在しない or 次が漢字でない)
+      // 中国の大連市
       condition: (prev, next) => {
         return prev === "大" && (!next || next === "市" || !/[\u4E00-\u9FFF]/.test(next));
       },
+      replacement: "連"
+    },
+    {
+      condition: (prev, next) => ["中"].includes(next),
       replacement: "連"
     },
     {
