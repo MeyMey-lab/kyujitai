@@ -67,7 +67,7 @@ const conditionalReplacements = {
   "連": [
     {
       // 和語の送りがなや固有名詞などの例外を保護（※「聯」の過剰変換防止）
-      condition: (prev, next) => ["れ", "な", "尺", "中"].includes(next) || ["大", "ソ", "道", "注", "し", "道"].includes(prev),
+      condition: (prev, next) => ["れ", "な", "尺", "中", "山"].includes(next) || ["大", "道", "注", "し", "道"].includes(prev),
       replacement: "連"
     }
   ],
