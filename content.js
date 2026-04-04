@@ -8,7 +8,39 @@ let settings = {
   avoidCompatibility: false  // 「CJK互換漢字を使わない」
 };
 
-// chrome.storage.local から設定を読み込む
+// 逆変換用辞書の生成（初期化時に一度だけ実行）
+const reverseReplacements = {};
+const reverseIdioms = {};
+
+function buildReverseDictionaries() {
+  // 単漢字の逆引き生成
+  if (typeof replacements !== 'undefined') {
+    for (const [newChar, oldChar] of Object.entries(replacements)) {
+      if (newChar !== oldChar) {
+        reverseReplacements[oldChar] = newChar;
+      }
+    }
+  }
+  // 条件付き変換の逆引き生成（瓣, 辨, 辯 -> 弁 など多対一の対応を吸収）
+  if (typeof conditionalReplacements !== 'undefined') {
+    for (const [newChar, conditions] of Object.entries(conditionalReplacements)) {
+      for (const cond of conditions) {
+        if (cond.replacement !== newChar) {
+          reverseReplacements[cond.replacement] = newChar;
+        }
+      }
+    }
+  }
+  // 熟語変換の逆引き生成
+  if (typeof idiomReplacements !== 'undefined') {
+    for (const [newIdiom, oldIdiom] of Object.entries(idiomReplacements)) {
+      if (newIdiom !== oldIdiom) {
+        reverseIdioms[oldIdiom] = newIdiom;
+      }
+    }
+  }
+}
+
 chrome.storage.local.get(
   ['convertOldToNew', 'convertFormToOld', 'convertCopyToNew', 'avoidCompatibility'],
   (result) => {
@@ -16,114 +48,98 @@ chrome.storage.local.get(
     settings.convertFormToOld = result.convertFormToOld || false;
     settings.convertCopyToNew = result.convertCopyToNew || false;
     settings.avoidCompatibility = result.avoidCompatibility || false;
-    // 設定読み込み完了後に初期化
+    
+    buildReverseDictionaries();
     initContentScript();
   }
 );
 
-// data.js で定義された新→旧の変換辞書（replacements）を元に、逆変換（旧→新）の辞書を生成
-const reverseReplacements = {};
-for (const key in replacements) {
-  if (replacements.hasOwnProperty(key)) {
-    reverseReplacements[replacements[key]] = key;
-  }
-}
-
 /**
- * CJK互換漢字かどうか判定する関数
- * Unicodeの範囲 U+F900～U+FAFF を対象とする
+ * CJK互換漢字かどうか判定する関数
  */
 function isCJKCompatibility(ch) {
   const cp = ch.codePointAt(0);
-  return (cp >= 0x3400 && cp <= 0x4DBF) ||     // CJK統合漢字拡張A
-         (cp >= 0x20000 && cp <= 0x2A6DF) ||   // CJK統合漢字拡張B
-         (cp >= 0x2A700 && cp <= 0x2B73F) ||   // CJK統合漢字拡張C
-         (cp >= 0x2B740 && cp <= 0x2B81F) ||   // CJK統合漢字拡張D
-         (cp >= 0x2B820 && cp <= 0x2CEAF) ||   // CJK統合漢字拡張E
+  if (!cp) return false;
+  return (cp >= 0x3400 && cp <= 0x4DBF) ||      // CJK統合漢字拡張A
+         (cp >= 0x20000 && cp <= 0x2A6DF) ||    // CJK統合漢字拡張B
+         (cp >= 0x2A700 && cp <= 0x2B73F) ||    // CJK統合漢字拡張C
+         (cp >= 0x2B740 && cp <= 0x2B81F) ||    // CJK統合漢字拡張D
+         (cp >= 0x2B820 && cp <= 0x2CEAF) ||    // CJK統合漢字拡張E
          (cp >= 0xF900 && cp <= 0xFAFF);        // CJK互換漢字
 }
 
 /**
- * 条件付き変換のチェックや通常の変換を行う関数
- * settings.convertOldToNew が true の場合は、旧字体なら新字体に戻す（reverseReplacements を使用）
- * また、settings.avoidCompatibility が true の場合、変換結果が CJK互換漢字なら変換を行わず元の文字を返す
+ * テキスト全体の変換処理（正順・逆順を一元管理）
+ * @param {string} text - 変換対象の文字列
+ * @param {boolean} toOld - true: 新→旧 / false: 旧→新
  */
-function getReplacement(char, prev, next) {
-  if (settings.convertOldToNew) {
-    // トグル動作：もし旧字体なら新字体に、もし新字体なら旧字体に変換する
+function convertText(text, toOld) {
+  if (!text || !/[\u4E00-\u9FFF]/.test(text)) return text;
+
+  let result = text;
+  const targetIdioms = toOld ? idiomReplacements : reverseIdioms;
+
+  // ① 熟語の変換（最長一致の観点から文字単位ループの前に一括置換）
+  if (typeof targetIdioms !== 'undefined') {
+    for (const [key, val] of Object.entries(targetIdioms)) {
+      if (settings.avoidCompatibility && isCJKCompatibility(val)) continue;
+      // indexOfによる事前判定でsplit/joinの不要な実行コストを削減
+      if (result.includes(key)) {
+        result = result.split(key).join(val);
+      }
+    }
+  }
+
+  // ② 文字単位の変換（文脈条件付き対応）
+  let finalResult = "";
+  for (let i = 0; i < result.length; i++) {
+    let char = result[i];
+    let prev = i > 0 ? result[i - 1] : "";
+    let next = i < result.length - 1 ? result[i + 1] : "";
     let swapped = char;
-    if (reverseReplacements[char]) {
-      swapped = reverseReplacements[char];
-    } else if (replacements[char]) {
-      swapped = replacements[char];
-    }
-    if (settings.avoidCompatibility && isCJKCompatibility(swapped)) {
-      return char;
-    }
-    return swapped;
-  } else {
-    // convertOldToNew が無効の場合は、これまでの処理（条件付きや通常の new→old 変換）を実施
-    if (conditionalReplacements && conditionalReplacements[char]) {
-      for (let candidate of conditionalReplacements[char]) {
-        if (candidate.condition(prev, next)) {
-          if (settings.avoidCompatibility && isCJKCompatibility(candidate.replacement)) {
-            return char;
+
+    if (toOld) {
+      let replacedByCondition = false;
+      if (typeof conditionalReplacements !== 'undefined' && conditionalReplacements[char]) {
+        for (let candidate of conditionalReplacements[char]) {
+          if (candidate.condition(prev, next)) {
+            swapped = candidate.replacement;
+            replacedByCondition = true;
+            break;
           }
-          return candidate.replacement;
         }
       }
-    }
-    if (replacements[char]) {
-      let newChar = replacements[char];
-      if (settings.avoidCompatibility && isCJKCompatibility(newChar)) {
-        return char;
+      if (!replacedByCondition && typeof replacements !== 'undefined' && replacements[char]) {
+        swapped = replacements[char];
       }
-      return newChar;
-    }
-    return char;
-  }
-}
-
-
-/**
- * 熟語変換（idiomReplacements）の適用
- * idiomReplacements は「新熟語:旧熟語」の形式で定義されている前提
- */
-function replaceIdioms(text) {
-  if (typeof idiomReplacements !== 'undefined') {
-    for (const idiom in idiomReplacements) {
-      if (idiomReplacements.hasOwnProperty(idiom)) {
-        // 置換結果が CJK互換漢字なら変換をスキップ
-        const replacement = idiomReplacements[idiom];
-        if (settings.avoidCompatibility && isCJKCompatibility(replacement)) {
-          continue;
-        }
-        text = text.split(idiom).join(replacement);
+    } else {
+      // 逆変換（旧→新）
+      if (reverseReplacements[char]) {
+        swapped = reverseReplacements[char];
       }
     }
+
+    if (settings.avoidCompatibility && isCJKCompatibility(swapped)) {
+      swapped = char;
+    }
+    finalResult += swapped;
   }
-  return text;
+  
+  return finalResult;
 }
 
 /**
- * 新→旧の変換を、文字単位で実施（熟語変換を先行して適用）
+ * TextNodeに対する置換処理
  */
 function handleText(textNode) {
-  let text = textNode.nodeValue;
-  if (!/[\u4E00-\u9FFF]/.test(text)) return;
+  const originalText = textNode.nodeValue;
+  const toOld = !settings.convertOldToNew; // convertOldToNewがfalseなら新→旧
+  const convertedText = convertText(originalText, toOld);
   
-  // ① 熟語変換を先行して適用
-  text = replaceIdioms(text);
-  
-  // ② 各文字について変換（前後の文脈を考慮）
-  let result = "";
-  for (let i = 0; i < text.length; i++) {
-    let current = text[i];
-    let prev = i > 0 ? text[i - 1] : "";
-    let next = i < text.length - 1 ? text[i + 1] : "";
-    result += getReplacement(current, prev, next);
+  // DOMの再描画コスト削減とMutationObserverの無限ループ防止
+  if (originalText !== convertedText) {
+    textNode.nodeValue = convertedText;
   }
-  textNode.nodeValue = result;
 }
 
 /**
@@ -135,6 +151,10 @@ function walk(node) {
     case Node.ELEMENT_NODE:
     case Node.DOCUMENT_NODE:
     case Node.DOCUMENT_FRAGMENT_NODE:
+      // スクリプトやスタイルの内部は無視
+      if (node.tagName === 'SCRIPT' || node.tagName === 'STYLE' || node.tagName === 'NOSCRIPT') {
+        break;
+      }
       child = node.firstChild;
       while (child) {
         next = child.nextSibling;
@@ -149,17 +169,32 @@ function walk(node) {
 }
 
 /**
+ * 入力フォームのカーソル位置を保持しながら変換するラッパー
+ */
+function handleInputConversion(el) {
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  const originalVal = el.value;
+  const convertedVal = convertText(originalVal, true); // フォーム入力は旧字体に変換
+
+  if (originalVal !== convertedVal) {
+    el.value = convertedVal;
+    // value書き換えによるカーソルの末尾ジャンプを防止
+    if (document.activeElement === el) {
+      el.setSelectionRange(start, end);
+    }
+  }
+}
+
+/**
  * メイン初期化関数
  */
 function initContentScript() {
   chrome.storage.local.get("enabled", (result) => {
     const enabled = (result.enabled === undefined) ? true : result.enabled;
-    if (!enabled) {
-      console.log("拡張機能は無効です。");
-      return; // 無効の場合は処理しない
-    }
-    // ページ全体（head と body）に対して置換処理を実施
-    walk(document.head);
+    if (!enabled) return;
+
+    // (1) ページ全体に対して置換処理を実施
     walk(document.body);
     
     // MutationObserver により、動的に追加されたノードも対象
@@ -170,75 +205,53 @@ function initContentScript() {
         });
       });
     });
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
+    observer.observe(document.body, { childList: true, subtree: true });
     
-    // (3) コピー時に新字体へ戻す機能の設定
+    // (2) コピー時に新字体へ戻す機能
     if (settings.convertCopyToNew) {
       document.addEventListener('copy', function(e) {
         const selection = window.getSelection().toString();
-        let converted = "";
-        for (let char of selection) {
-          // reverseReplacements により、旧字体なら新字体に戻す
-          converted += reverseReplacements[char] || char;
+        if (selection) {
+          const converted = convertText(selection, false); // false = 旧→新
+          e.clipboardData.setData('text/plain', converted);
+          e.preventDefault();
         }
-        e.clipboardData.setData('text/plain', converted);
-        e.preventDefault();
       });
     }
     
-    // (2) フォーム入力の変換処理
+    // (3) フォーム入力の変換処理
     if (settings.convertFormToOld) {
-      const formElements = document.querySelectorAll("input[type='text'], textarea");
-      formElements.forEach(el => {
-        let composing = false;
-        el.addEventListener('compositionstart', () => {
-          composing = true;
-        });
-        el.addEventListener('compositionend', () => {
+      // イベントデリゲーションを利用して動的追加されたフォーム要素にも対応
+      let composing = false;
+      document.body.addEventListener('compositionstart', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') composing = true;
+      });
+      document.body.addEventListener('compositionend', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
           composing = false;
-          // 組成終了後に変換処理を実行する
-          el.value = convertNewToOld(el.value);
-        });
-        el.addEventListener('input', () => {
-          // 組成中は変換せず、組成終了後に変換されるようにする
-          if (!composing) {
-            el.value = convertNewToOld(el.value);
-          }
-        });
+          handleInputConversion(e.target);
+        }
+      });
+      document.body.addEventListener('input', (e) => {
+        if (!composing && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+          handleInputConversion(e.target);
+        }
       });
     }
 
-    // プレースホルダー内も置換
+    // (4) プレースホルダーの置換
     replacePlaceholders();
   });
 }
 
-/**
- * 旧→新の変換（フォーム入力用など）を、文字単位で実施
- * ※通常は getReplacement を利用しますが、フォーム入力は全体の文字列に対して変換する
- */
-function convertNewToOld(text) {
-  let result = "";
-  for (let i = 0; i < text.length; i++) {
-    let current = text[i];
-    let prev = i > 0 ? text[i - 1] : "";
-    let next = i < text.length - 1 ? text[i + 1] : "";
-    result += getReplacement(current, prev, next);
-  }
-  return result;
-}
-
-// プレースホルダー初回変換
 function replacePlaceholders() {
   const elems = document.querySelectorAll('[placeholder]');
+  const toOld = !settings.convertOldToNew;
   elems.forEach(elem => {
     let ph = elem.getAttribute('placeholder');
-    // convertNewToOld は既存の旧→新（またはその逆）の変換関数
-    ph = convertNewToOld(ph);
-    elem.setAttribute('placeholder', ph);
+    if (ph) {
+      const converted = convertText(ph, toOld);
+      if (ph !== converted) elem.setAttribute('placeholder', converted);
+    }
   });
 }
-
